@@ -1,9 +1,8 @@
 import fs from 'fs'; // Use fs for createReadStream
 import path from 'path';
-import { fileURLToPath } from 'url';
 import { Camera } from '../models/camera.model.js';
 import { publishEvent } from '../config/mqtt.js';
-
+import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadDir = path.join(__dirname, "../");
