@@ -1,13 +1,14 @@
 import express from 'express';
 import multer from 'multer';
 import { v4 as uuidv4 } from 'uuid';
-import { spawn } from 'child_process';
+import { spawn, exec } from 'child_process';
 import path from 'path';
 import fs from 'fs';
 import { Camera } from '../models/camera.model.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 import { cacheCamera, cacheAllCameras, deleteCachedCamera } from '../config/redis.js';
 import { publishEvent } from '../config/mqtt.js';
+
 
 const router = express.Router();
 
@@ -36,6 +37,7 @@ const upload = multer({
     }
   }
 });
+
 
 // Get all cameras
 router.get('/', authenticateToken, async (req, res) => {
@@ -223,7 +225,7 @@ router.put('/:id', authenticateToken, requireAdmin, upload.single('video'), asyn
     if (!camera) {
       return res.status(404).json({ message: 'Camera not found' });
     }
-console.log(req.body);
+    console.log(req.body);
     // Update fields
     if (name) camera.name = name;
     if (description) camera.description = description;
