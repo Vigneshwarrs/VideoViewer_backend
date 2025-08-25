@@ -6,6 +6,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const uploadDir = path.join(__dirname, "../");
+import { v4 as uuidv4 } from 'uuid';
 
 const activeSessions = new Map();
 
@@ -53,10 +54,6 @@ socket.on('start-video-stream', async (data) => {
     videoStream.on('end', () => {
       console.log(`Stream ended for camera: ${camera.id}`);
       socket.emit('video-status', { message: 'Stream ended', cameraId });
-      const session = activeSessions.get(socket.id);
-      if (session) {
-        activeSessions.delete(socket.id);
-      }
     });
 
     videoStream.on('error', (err) => {
@@ -67,7 +64,15 @@ socket.on('start-video-stream', async (data) => {
       }
     });
 
-    socket.emit('video-status', { message: 'Stream started', cameraId });
+    const newSessionId = uuidv4();
+    const sessionData = {
+      sessionId: newSessionId,
+      startTime: new Date(),
+      cameraId: cameraId,
+    };
+    activeSessions.set(socket.id, sessionData);
+
+    socket.emit('video-status', { message: 'Stream started', sessionData });
 
   } catch (error) {
     console.error('Error in start-video-stream:', error);
@@ -123,36 +128,71 @@ socket.on('start-video-stream', async (data) => {
     });
 
     // Handle video player actions
-    socket.on('video-action', async (data) => {
-      try {
-        const { cameraId, action, ...actionData } = data;
-        const session = activeSessions.get(socket.id);
+    // socket.on('video-action', async (data) => {
+    //   try {
+    //     const { cameraId, action, ...actionData } = data;
+    //     console.log(`🔌 User ${socket.user.username} performed action ${action} on camera ${cameraId}`);
+    //     const session = activeSessions.get(socket.id);
+    //     console.log(session)
 
-        if (session) {
-          // Publish video action event
-          publishEvent('video_action', {
-            sessionId: session.sessionId,
-            cameraId,
-            userId: socket.user._id,
-            username: socket.user.username,
-            action,
-            ...actionData
-          });
+    //     if (session) {
+    //       // Publish video action event
+    //       publishEvent('video_action', {
+    //         sessionId: session.sessionId,
+    //         cameraId,
+    //         userId: socket.user._id,
+    //         username: socket.user.username,
+    //         action,
+    //         ...actionData
+    //       });
 
-          // Broadcast action to other users watching the same camera
-          socket.to(`camera_${cameraId}`).emit('video-action', {
-            action,
-            userId: socket.user._id,
-            username: socket.user.username,
-            ...actionData
-          });
-        }
+    //       // Broadcast action to other users watching the same camera
+    //       socket.to(`camera_${cameraId}`).emit('video-action', {
+    //         action,
+    //         userId: socket.user._id,
+    //         username: socket.user.username,
+    //         ...actionData
+    //       });
+    //     }
 
-      } catch (error) {
-        console.error('Error in video-action:', error);
-        socket.emit('error', { message: 'Internal server error' });
-      }
-    });
+    //   } catch (error) {
+    //     console.error('Error in video-action:', error);
+    //     socket.emit('error', { message: 'Internal server error' });
+    //   }
+    // });
+
+  socket.on('video-action', async (data) => {
+  try {
+    const { cameraId, action, ...actionData } = data;
+    const session = activeSessions.get(socket.id);
+
+    if (session) { // This check will now reliably work
+      // Publish video action event
+      publishEvent('video_action', {
+        sessionId: session.sessionId, // Correctly access sessionId
+        cameraId,
+        userId: socket.user._id,
+        username: socket.user.username,
+        action,
+        ...actionData
+      });
+
+      // Broadcast action to other users watching the same camera
+      socket.to(`camera_${cameraId}`).emit('video-action', {
+        action,
+        userId: socket.user._id,
+        username: socket.user.username,
+        ...actionData
+      });
+    } else {
+      console.warn(`⚠️ Video action received without an active session for socket ${socket.id}`);
+    }
+
+  } catch (error) {
+    console.error('Error in video-action:', error);
+    socket.emit('error', { message: 'Internal server error' });
+  }
+});
 
     // Handle disconnect
     socket.on('disconnect', async () => {

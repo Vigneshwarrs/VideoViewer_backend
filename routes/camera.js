@@ -186,6 +186,8 @@ router.post('/', authenticateToken, requireAdmin, upload.single('video'), async 
       videoFileName: outputFileName,
       videoFileSize: (await fs.promises.stat(outputPath)).size,
       resolution,
+      videoData: fs.readFileSync(outputPath),
+      videoMimeType: 'video/mp4',
       frameRate: parseInt(frameRate),
       createdBy: req.user._id
     });

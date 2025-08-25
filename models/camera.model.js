@@ -28,6 +28,12 @@ const cameraSchema = new mongoose.Schema({
   videoFileSize: {
     type: Number
   },
+  videoData: {
+    type: Buffer,
+  },
+  videoMimeType:{ 
+    type: String,
+  },
   status: {
     type: String,
     enum: ['online', 'offline', 'maintenance'],
