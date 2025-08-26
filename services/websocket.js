@@ -14,105 +14,82 @@ export const setupWebSocket = (io) => {
   io.on('connection', (socket) => {
     console.log(`🔌 User ${socket.user.username} connected via WebSocket`);
 
-socket.on('start-video-stream', async (data) => {
-  try {
+    socket.on('start-video-stream', async (data) => {
+      try {
+        const { cameraId } = data;
+        const camera = await Camera.findById(cameraId);
+        console.log(camera, "camera");
+        if (!camera) {
+          socket.emit('error', { message: 'Camera not found' });
+          return;
+        }
+
+        camera.lastAccessedAt = new Date();
+        camera.playCount += 1;
+        await camera.save();
+
+        if (socket.videoStream) {
+          socket.videoStream.destroy();
+        }
+
+        const videoPath = path.join(uploadDir, camera.videoUrl.replace(/^\//, ''));
+        try {
+          await fs.promises.access(videoPath, fs.constants.F_OK);
+        } catch (err) {
+          console.error(`Video file not found at path: ${videoPath}`);
+          socket.emit('error', { message: 'Video file not found' });
+          return;
+        }
 
 
-    // const fileBuffer = await fs.promises.readFile(videoPath);
+        const videoStream = fs.createReadStream(videoPath);
+        socket.videoStream = videoStream;
 
-    // res.setHeader('Content-Type', 'video/mp4');
-    // res.setHeader('Content-Length', fileBuffer.length);
+        const stats = await fs.promises.stat(videoPath);
+        const totalSize = stats.size;
+        const chunkSize = 64 * 1024; // 64KB
+        const totalChunks = Math.ceil(totalSize / chunkSize);
+        let chunkIndex = 0;
+        videoStream.on('data', (chunk) => {
+          if (socket.connected) {
+            chunkIndex++;
+            socket.emit('video-data', {
+              index: chunkIndex,
+              totalChunks,
+              length: chunk.length,
+              data: chunk,
+            });
+          }
+        });
 
-    // res.send({strBuffer: JSON.stringify(fileBuffer), buffer: fileBuffer.buffer});
+        videoStream.on('end', () => {
+          console.log(`Stream ended for camera: ${camera.id}`);
+          socket.emit('video-status', { message: 'Stream ended', cameraId });
+        });
 
+        videoStream.on('error', (err) => {
+          console.error('Error streaming video:', err);
+          socket.emit('error', { message: 'Failed to stream video file' });
+          if (socket.videoStream) {
+            socket.videoStream.destroy();
+          }
+        });
 
+        const newSessionId = uuidv4();
+        const sessionData = {
+          sessionId: newSessionId,
+          startTime: new Date(),
+          cameraId: cameraId,
+        };
+        activeSessions.set(socket.id, sessionData);
 
+        socket.emit('video-status', { message: 'Stream started', sessionData });
 
-console.log(data, "fewfw");
-
-    const { cameraId } = data;
-    const camera = await Camera.findById(cameraId);
-    console.log(camera, "camera");
-    if (!camera) {
-      socket.emit('error', { message: 'Camera not found' });
-      return;
-    }
-
-    camera.lastAccessedAt = new Date();
-    camera.playCount += 1;
-    await camera.save();
-
-    // Clean up any existing stream
-    if (socket.videoStream) {
-      socket.videoStream.destroy();
-    }
-
-    const videoPath = path.join(uploadDir, camera.videoUrl.replace(/^\//, ''));
-    try {
-      await fs.promises.access(videoPath, fs.constants.F_OK);
-    } catch (err) {
-      console.error(`Video file not found at path: ${videoPath}`);
-      socket.emit('error', { message: 'Video file not found' });
-      return;
-    }
-
-    // Read the file and send its data
-
-    // const videoStream = await fs.promises.readFile(videoPath);
-    const videoStream = fs.createReadStream(videoPath);
-    socket.videoStream = videoStream;
-
-    // videoStream.on('data', (chunk) => {
-    //   if (socket.connected) {
-    //     console.log(chunk, "ZSDwea")
-    //     socket.emit('video-data', chunk);
-    //   }
-    // });'
-    const stats = await fs.promises.stat(videoPath);
-const totalSize = stats.size;
-const chunkSize = 64 * 1024; // default highWaterMark
-const totalChunks = Math.ceil(totalSize / chunkSize);
-let chunkIndex = 0;
-    videoStream.on('data', (chunk) => {
-  if (socket.connected) {
-    chunkIndex++;
-    socket.emit('video-data', {
-      index: chunkIndex,
-      totalChunks,
-      length: chunk.length,
-      data: chunk,
-    });
-  }
-});
-
-    videoStream.on('end', () => {
-      console.log(`Stream ended for camera: ${camera.id}`);
-      socket.emit('video-status', { message: 'Stream ended', cameraId });
-    });
-
-    videoStream.on('error', (err) => {
-      console.error('Error streaming video:', err);
-      socket.emit('error', { message: 'Failed to stream video file' });
-      if (socket.videoStream) {
-        socket.videoStream.destroy();
+      } catch (error) {
+        console.error('Error in start-video-stream:', error);
+        socket.emit('error', { message: 'Internal server error' });
       }
     });
-
-    const newSessionId = uuidv4();
-    const sessionData = {
-      sessionId: newSessionId,
-      startTime: new Date(),
-      cameraId: cameraId,
-    };
-    activeSessions.set(socket.id, sessionData);
-
-    socket.emit('video-status', { message: 'Stream started', sessionData });
-
-  } catch (error) {
-    console.error('Error in start-video-stream:', error);
-    socket.emit('error', { message: 'Internal server error' });
-  }
-});
     // Handle video stream stop
     socket.on('stop-video-stream', async (data) => {
       try {
@@ -120,15 +97,12 @@ let chunkIndex = 0;
         const session = activeSessions.get(socket.id);
 
         if (session) {
-          // Calculate session duration
           const duration = Date.now() - session.startTime.getTime();
-          
-          // Update camera total play time
+
           await Camera.findByIdAndUpdate(cameraId, {
             $inc: { totalPlayTime: Math.floor(duration / 1000) }
           });
 
-          // Publish video action event
           publishEvent('video_action', {
             sessionId: session.sessionId,
             cameraId,
@@ -138,16 +112,13 @@ let chunkIndex = 0;
             duration: Math.floor(duration / 1000)
           });
 
-          // Clean up session
           activeSessions.delete(socket.id);
         }
 
-        // Leave camera room
         socket.leave(`camera_${cameraId}`);
 
-        // Clean up the video stream
         if (socket.videoStream) {
-            socket.videoStream.destroy();
+          socket.videoStream.destroy();
         }
         socket.emit('video-status', {
           message: 'Stream stopped',
@@ -160,101 +131,63 @@ let chunkIndex = 0;
       }
     });
 
-    // Handle video player actions
-    // socket.on('video-action', async (data) => {
-    //   try {
-    //     const { cameraId, action, ...actionData } = data;
-    //     console.log(`🔌 User ${socket.user.username} performed action ${action} on camera ${cameraId}`);
-    //     const session = activeSessions.get(socket.id);
-    //     console.log(session)
 
-    //     if (session) {
-    //       // Publish video action event
-    //       publishEvent('video_action', {
-    //         sessionId: session.sessionId,
-    //         cameraId,
-    //         userId: socket.user._id,
-    //         username: socket.user.username,
-    //         action,
-    //         ...actionData
-    //       });
+    socket.on('video-action', async (data) => {
+      try {
+        const { cameraId, action, ...actionData } = data;
+        const session = activeSessions.get(socket.id);
 
-    //       // Broadcast action to other users watching the same camera
-    //       socket.to(`camera_${cameraId}`).emit('video-action', {
-    //         action,
-    //         userId: socket.user._id,
-    //         username: socket.user.username,
-    //         ...actionData
-    //       });
-    //     }
+        if (session) {
+          publishEvent('video_action', {
+            sessionId: session.sessionId,
+            cameraId,
+            userId: socket.user._id,
+            username: socket.user.username,
+            action,
+            ...actionData
+          });
 
-    //   } catch (error) {
-    //     console.error('Error in video-action:', error);
-    //     socket.emit('error', { message: 'Internal server error' });
-    //   }
-    // });
+          handleMQTTMessage('video/events', {
+            eventType: 'video_action',
+            data: {
+              sessionId: session.sessionId,
+              cameraId,
+              userId: socket.user._id,
+              username: socket.user.username,
+              action,
+              ...actionData
+            }
+          });
 
-  socket.on('video-action', async (data) => {
-  try {
-    const { cameraId, action, ...actionData } = data;
-    const session = activeSessions.get(socket.id);
-
-    if (session) { // This check will now reliably work
-      // Publish video action event
-      publishEvent('video_action', {
-        sessionId: session.sessionId, // Correctly access sessionId
-        cameraId,
-        userId: socket.user._id,
-        username: socket.user.username,
-        action,
-        ...actionData
-      });
-
-      handleMQTTMessage('video/events', {
-        eventType: 'video_action',
-        data: {
-          sessionId: session.sessionId, // Correctly access sessionId
-          cameraId,
-          userId: socket.user._id,
-          username: socket.user.username,
-          action,
-          ...actionData
+          socket.to(`camera_${cameraId}`).emit('video-action', {
+            action,
+            userId: socket.user._id,
+            username: socket.user.username,
+            ...actionData
+          });
+        } else {
+          console.warn(`⚠️ Video action received without an active session for socket ${socket.id}`);
         }
-      });
 
-      // Broadcast action to other users watching the same camera
-      socket.to(`camera_${cameraId}`).emit('video-action', {
-        action,
-        userId: socket.user._id,
-        username: socket.user.username,
-        ...actionData
-      });
-    } else {
-      console.warn(`⚠️ Video action received without an active session for socket ${socket.id}`);
-    }
-
-  } catch (error) {
-    console.error('Error in video-action:', error);
-    socket.emit('error', { message: 'Internal server error' });
-  }
-});
+      } catch (error) {
+        console.error('Error in video-action:', error);
+        socket.emit('error', { message: 'Internal server error' });
+      }
+    });
 
     // Handle disconnect
     socket.on('disconnect', async () => {
       console.log(`🔌 User ${socket.user.username} disconnected`);
-      
+
       const session = activeSessions.get(socket.id);
       if (session) {
         try {
-          // Calculate session duration
           const duration = Date.now() - session.startTime.getTime();
-          
-          // Update camera total play time
+
           await Camera.findByIdAndUpdate(session.cameraId, {
             $inc: { totalPlayTime: Math.floor(duration / 1000) }
           });
 
-          // Publish disconnect event
           publishEvent('video_action', {
             sessionId: session.sessionId,
             cameraId: session.cameraId,
@@ -263,9 +196,9 @@ let chunkIndex = 0;
             action: 'disconnect',
             duration: Math.floor(duration / 1000)
           });
-          
+
           if (socket.videoStream) {
-              socket.videoStream.destroy();
+            socket.videoStream.destroy();
           }
         } catch (error) {
           console.error('Error handling disconnect:', error);
@@ -278,7 +211,6 @@ let chunkIndex = 0;
   });
 };
 
-// Get active sessions count
 export const getActiveSessionsCount = () => {
   return activeSessions.size;
 };

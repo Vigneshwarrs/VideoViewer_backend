@@ -12,7 +12,6 @@ import { publishEvent } from '../config/mqtt.js';
 
 const router = express.Router();
 
-// Configure multer for video upload
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, 'uploads/');
@@ -26,7 +25,7 @@ const storage = multer.diskStorage({
 const upload = multer({
   storage,
   limits: {
-    fileSize: 100 * 1024 * 1024 // 100MB limit
+    fileSize: 100 * 1024 * 1024 
   },
   fileFilter: (req, file, cb) => {
     // Check file type
@@ -39,14 +38,12 @@ const upload = multer({
 });
 
 
-// Get all cameras
 router.get('/', authenticateToken, async (req, res) => {
   try {
     const cameras = await Camera.find({})
       .populate('createdBy', 'username')
       .sort({ createdAt: -1 });
 
-    // Cache the cameras
     await cacheAllCameras(cameras);
 
     res.json(cameras);
@@ -56,7 +53,6 @@ router.get('/', authenticateToken, async (req, res) => {
   }
 });
 
-// Get single camera
 router.get('/:id', authenticateToken, async (req, res) => {
   try {
     const camera = await Camera.findById(req.params.id)
@@ -73,69 +69,6 @@ router.get('/:id', authenticateToken, async (req, res) => {
   }
 });
 
-// Create camera
-// router.post('/', authenticateToken, requireAdmin, upload.single('video'), async (req, res) => {
-//   try {
-//     const { name, description, location, resolution, frameRate } = req.body;
-
-//     if (!name || !location || !resolution || !frameRate) {
-//       return res.status(400).json({ message: 'Required fields are missing' });
-//     }
-
-//     if (!req.file) {
-//       return res.status(400).json({ message: 'Video file is required' });
-//     }
-
-//     // Create video URL
-//     const videoUrl = `/uploads/${req.file.filename}`;
-
-//     // Create camera
-//     const camera = new Camera({
-//       name,
-//       description,
-//       location,
-//       videoUrl,
-//       videoFileName: req.file.filename,
-//       videoFileSize: req.file.size,
-//       resolution,
-//       frameRate: parseInt(frameRate),
-//       createdBy: req.user._id
-//     });
-
-//     await camera.save();
-
-//     // Populate the createdBy field
-//     await camera.populate('createdBy', 'username');
-
-//     // Cache the camera
-//     await cacheCamera(camera);
-
-//     // Publish event to MQTT
-//     publishEvent('camera_created', {
-//       cameraId: camera._id,
-//       name: camera.name,
-//       location: camera.location,
-//       userId: req.user._id,
-//       username: req.user.username,
-//       timestamp: new Date()
-//     });
-
-//     res.status(201).json(camera);
-
-//   } catch (error) {
-//     // Clean up uploaded file if camera creation fails
-//     if (req.file) {
-//       try {
-//         await fs.unlink(req.file.path);
-//       } catch (unlinkError) {
-//         console.error('Error cleaning up file:', unlinkError);
-//       }
-//     }
-
-//     console.error('Error creating camera:', error);
-//     res.status(500).json({ message: 'Failed to create camera' });
-//   }
-// });
 
 router.post('/', authenticateToken, requireAdmin, upload.single('video'), async (req, res) => {
   try {
@@ -171,13 +104,10 @@ router.post('/', authenticateToken, requireAdmin, upload.single('video'), async 
       });
     });
 
-    // Delete the original uploaded file
     await fs.promises.unlink(uploadedPath);
 
-    // Create video URL
     const videoUrl = `/uploads/${outputFileName}`;
 
-    // Save camera
     const camera = new Camera({
       name,
       description,
@@ -195,7 +125,6 @@ router.post('/', authenticateToken, requireAdmin, upload.single('video'), async 
     await camera.save();
     await camera.populate('createdBy', 'username');
 
-    // Cache and MQTT
     await cacheCamera(camera);
     publishEvent('camera_created', {
       cameraId: camera._id,
@@ -209,7 +138,6 @@ router.post('/', authenticateToken, requireAdmin, upload.single('video'), async 
     res.status(201).json(camera);
 
   } catch (error) {
-    // Clean up uploaded file if conversion or camera save fails
     if (req.file) {
       try { await fs.unlink(req.file.path); } catch (e) { console.error(e); }
     }
@@ -237,7 +165,6 @@ router.put('/:id', authenticateToken, requireAdmin, upload.single('video'), asyn
 
     // If new video file is uploaded
     if (req.file) {
-      // Delete old video file
       if (camera.videoFileName) {
         try {
           await fs.unlink(path.join('uploads', camera.videoFileName));
@@ -246,7 +173,6 @@ router.put('/:id', authenticateToken, requireAdmin, upload.single('video'), asyn
         }
       }
 
-      // Update video info
       camera.videoUrl = `/uploads/${req.file.filename}`;
       camera.videoFileName = req.file.filename;
       camera.videoFileSize = req.file.size;
@@ -255,10 +181,8 @@ router.put('/:id', authenticateToken, requireAdmin, upload.single('video'), asyn
     await camera.save();
     await camera.populate('createdBy', 'username');
 
-    // Update cache
     await cacheCamera(camera);
-
-    // Publish event to MQTT
+T
     publishEvent('camera_updated', {
       cameraId: camera._id,
       name: camera.name,
@@ -283,8 +207,6 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
     if (!camera) {
       return res.status(404).json({ message: 'Camera not found' });
     }
-
-    // Delete video file
     if (camera.videoFileName) {
       try {
         await fs.unlink(path.join('uploads', camera.videoFileName));
@@ -295,10 +217,8 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
 
     await Camera.findByIdAndDelete(req.params.id);
 
-    // Remove from cache
     await deleteCachedCamera(req.params.id);
 
-    // Publish event to MQTT
     publishEvent('camera_deleted', {
       cameraId: camera._id,
       name: camera.name,
@@ -316,7 +236,6 @@ router.delete('/:id', authenticateToken, requireAdmin, async (req, res) => {
   }
 });
 
-// Update camera status
 router.patch('/:id/status', authenticateToken, requireAdmin, async (req, res) => {
   try {
     const { status } = req.body;
@@ -338,7 +257,6 @@ router.patch('/:id/status', authenticateToken, requireAdmin, async (req, res) =>
     // Update cache
     await cacheCamera(camera);
 
-    // Publish event to MQTT
     publishEvent('camera_status_updated', {
       cameraId: camera._id,
       name: camera.name,

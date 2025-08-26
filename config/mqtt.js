@@ -12,7 +12,7 @@ export const connectMQTT = async () => {
       // Subscribe to video events topic
       mqttClient.subscribe(process.env.MQTT_TOPIC || 'video/events', (err) => {
         if (err) {
-          console.error('❌ MQTT Subscription Error:', err);
+          console.error('MQTT Subscription Error:', err);
         } else {
           console.log(`Subscribed to topic: ${process.env.MQTT_TOPIC || 'video/events'}`);
         }
@@ -28,7 +28,6 @@ export const connectMQTT = async () => {
         const data = JSON.parse(message.toString());
         console.log(`MQTT Message received on ${topic}:`, data);
         
-        // Forward to Node-RED or handle internally
         handleMQTTMessage(topic, data);
       } catch (error) {
         console.error('Error parsing MQTT message:', error);
@@ -44,7 +43,6 @@ export const connectMQTT = async () => {
 
 export const getMqttClient = () => mqttClient;
 
-// Publish event to MQTT
 export const publishEvent = (eventType, data) => {
   try {
     if (!mqttClient) {
@@ -72,7 +70,6 @@ export const publishEvent = (eventType, data) => {
   }
 };
 
-// Handle incoming MQTT messages
 export const handleMQTTMessage = async (topic, data) => {
   try {
     const { getPgClient } = await import('./db.js');

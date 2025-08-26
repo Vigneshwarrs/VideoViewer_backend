@@ -12,7 +12,6 @@ export const connectDB = async () => {
     const conn = await mongoose.connect(process.env.MONGODB_URI);
     console.log(`MongoDB Connected: ${conn.connection.host}`);
     
-    // Create default users if they don't exist
     await createDefaultUsers();
     
   } catch (error) {
@@ -31,7 +30,6 @@ export const connectPostgres = async () => {
     await pgClient.connect();
     console.log('TimescaleDB Connected');
     
-    // Initialize TimescaleDB tables
     await initializeTables();
     
     return pgClient;
@@ -101,9 +99,9 @@ const initializeTables = async () => {
       SELECT create_hypertable('video_player_logs', 'timestamp', if_not_exists => TRUE);
     `);
 
-    console.log('✅ TimescaleDB tables initialized with hypertables, indexes, and compression');
+    console.log('TimescaleDB tables initialized with hypertables, indexes, and compression');
   } catch (error) {
-    console.error('❌ Error initializing TimescaleDB tables:', error);
+    console.error('Error initializing TimescaleDB tables:', error);
     throw error;
   }
 };

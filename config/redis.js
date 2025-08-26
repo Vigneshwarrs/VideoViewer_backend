@@ -58,15 +58,15 @@ export const deleteCachedCamera = async (cameraId) => {
 
 export const cacheAllCameras = async (cameras) => {
   try {
-    await redisClient.setEx('cameras:all', 1800, JSON.stringify(cameras)); // Cache for 30 minutes
+    await redisClient.setEx('cameras:all', 1800, JSON.stringify(cameras));
     
     // Also cache individual cameras
     for (const camera of cameras) {
       await cacheCamera(camera);
     }
     
-    console.log(`📦 ${cameras.length} cameras cached`);
+    console.log(`${cameras.length} cameras cached`);
   } catch (error) {
-    console.error('❌ Error caching cameras:', error);
+    console.error('Error caching cameras:', error);
   }
 };
