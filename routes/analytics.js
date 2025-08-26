@@ -248,7 +248,29 @@ router.get('/video-logs', authenticateToken, requireAdmin, async (req, res) => {
 
     const result = await pgClient.query(query, params);
 
-    res.json(result.rows);
+    const logs = result.rows;
+
+    // Step 2: gather unique ids
+const cameraIds = [...new Set(logs.map(l => String(l.camera_id).replace(/^"|"$/g, '')))];
+const userIds   = [...new Set(logs.map(l => String(l.user_id).replace(/^"|"$/g, '')))];
+
+    // Step 3: fetch from MongoDB and Postgres (depending on schema)
+    const cameras = await Camera.find({ _id: { $in: cameraIds } }).lean();
+    const users   = await User.find({ _id: { $in: userIds } }).lean(); // if users in Mongo
+    // if users are in Postgres, do another SQL query instead
+
+    // Step 4: build lookup maps
+    const cameraMap = Object.fromEntries(cameras.map(c => [String(c._id), c]));
+    const userMap   = Object.fromEntries(users.map(u => [String(u._id), u]));
+
+    // Step 5: merge
+    const enrichedLogs = logs.map(l => ({
+      ...l,
+      camera_name: cameraMap[l.camera_id]?.name || null,
+      user_name: userMap[l.user_id]?.username || null
+    }));
+
+    res.json(enrichedLogs);
 
   } catch (error) {
     console.error('Error fetching video player logs:', error);

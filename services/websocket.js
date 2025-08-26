@@ -1,7 +1,7 @@
 import fs from 'fs'; // Use fs for createReadStream
 import path from 'path';
 import { Camera } from '../models/camera.model.js';
-import { publishEvent } from '../config/mqtt.js';
+import { publishEvent, handleMQTTMessage } from '../config/mqtt.js';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -16,8 +16,23 @@ export const setupWebSocket = (io) => {
 
 socket.on('start-video-stream', async (data) => {
   try {
+
+
+    // const fileBuffer = await fs.promises.readFile(videoPath);
+
+    // res.setHeader('Content-Type', 'video/mp4');
+    // res.setHeader('Content-Length', fileBuffer.length);
+
+    // res.send({strBuffer: JSON.stringify(fileBuffer), buffer: fileBuffer.buffer});
+
+
+
+
+console.log(data, "fewfw");
+
     const { cameraId } = data;
     const camera = await Camera.findById(cameraId);
+    console.log(camera, "camera");
     if (!camera) {
       socket.emit('error', { message: 'Camera not found' });
       return;
@@ -42,14 +57,33 @@ socket.on('start-video-stream', async (data) => {
     }
 
     // Read the file and send its data
-    const videoStream = fs.createReadStream(videoPath, { highWaterMark: 64 * 1024 });
+
+    // const videoStream = await fs.promises.readFile(videoPath);
+    const videoStream = fs.createReadStream(videoPath);
     socket.videoStream = videoStream;
 
+    // videoStream.on('data', (chunk) => {
+    //   if (socket.connected) {
+    //     console.log(chunk, "ZSDwea")
+    //     socket.emit('video-data', chunk);
+    //   }
+    // });'
+    const stats = await fs.promises.stat(videoPath);
+const totalSize = stats.size;
+const chunkSize = 64 * 1024; // default highWaterMark
+const totalChunks = Math.ceil(totalSize / chunkSize);
+let chunkIndex = 0;
     videoStream.on('data', (chunk) => {
-      if (socket.connected) {
-        socket.emit('video-data', chunk);
-      }
+  if (socket.connected) {
+    chunkIndex++;
+    socket.emit('video-data', {
+      index: chunkIndex,
+      totalChunks,
+      length: chunk.length,
+      data: chunk,
     });
+  }
+});
 
     videoStream.on('end', () => {
       console.log(`Stream ended for camera: ${camera.id}`);
@@ -115,7 +149,6 @@ socket.on('start-video-stream', async (data) => {
         if (socket.videoStream) {
             socket.videoStream.destroy();
         }
-
         socket.emit('video-status', {
           message: 'Stream stopped',
           cameraId
@@ -175,6 +208,18 @@ socket.on('start-video-stream', async (data) => {
         username: socket.user.username,
         action,
         ...actionData
+      });
+
+      handleMQTTMessage('video/events', {
+        eventType: 'video_action',
+        data: {
+          sessionId: session.sessionId, // Correctly access sessionId
+          cameraId,
+          userId: socket.user._id,
+          username: socket.user.username,
+          action,
+          ...actionData
+        }
       });
 
       // Broadcast action to other users watching the same camera

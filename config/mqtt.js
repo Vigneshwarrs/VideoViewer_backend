@@ -73,7 +73,7 @@ export const publishEvent = (eventType, data) => {
 };
 
 // Handle incoming MQTT messages
-const handleMQTTMessage = async (topic, data) => {
+export const handleMQTTMessage = async (topic, data) => {
   try {
     const { getPgClient } = await import('./db.js');
     const pgClient = getPgClient();
